@@ -1,14 +1,14 @@
 package net.doxxx.spatula
 
-import scala.concurrent.Future
 import akka.actor._
 import spray.can.client.HttpClient
 import spray.client.HttpConduit
-import spray.io._
-import spray.util._
 import spray.http._
+import spray.io._
 import spray.json._
-import spray.http.HttpResponse
+import spray.caching._
+import scala.concurrent._
+import ExecutionContext.Implicits.global
 
 class WowDbApi(implicit val system: ActorSystem) {
   val ioBridge = IOExtension(system).ioBridge()
@@ -18,6 +18,9 @@ class WowDbApi(implicit val system: ActorSystem) {
     props = Props(new HttpConduit(httpClient, "www.wowdb.com", 80)),
     name = "http-conduit"
   )
+
+  val itemCache: Cache[JsObject] = LruCache(maxCapacity = 1000)
+  val spellCache: Cache[JsObject] = LruCache(maxCapacity = 1000)
 
   import HttpConduit._
 
@@ -31,10 +34,14 @@ class WowDbApi(implicit val system: ActorSystem) {
   }
 
   def fetchItem(id: Int): Future[JsObject] = {
-    pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson).map(_.asJsObject)
+    itemCache.fromFuture(id) {
+      pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson).map(_.asJsObject)
+    }
   }
 
   def fetchSpell(id: Int): Future[JsObject] = {
-    pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson).map(_.asJsObject)
+    spellCache.fromFuture(id) {
+      pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson).map(_.asJsObject)
+    }
   }
 }
