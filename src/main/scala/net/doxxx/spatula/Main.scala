@@ -1,6 +1,7 @@
 package net.doxxx.spatula
 
-import akka.actor.ActorSystem
+import akka.actor._
+import akka.pattern._
 import spray.json.{JsObject, DefaultJsonProtocol}
 import java.io.{BufferedWriter, FileWriter, File}
 import scala.util.{Failure, Success}
@@ -8,13 +9,15 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
 import scala.io.Source
+import akka.util.Timeout
 
 object Main {
   import DefaultJsonProtocol._
+  import WowDbApi._
 
   implicit val system = ActorSystem()
-
-  val api = new WowDbApi
+  implicit val timeout = Timeout(1.minute)
+  val api = system.actorOf(Props[WowDbApi], "wowdb-api")
 
   def main(args: Array[String]) {
     if (args.length != 2) {
@@ -27,8 +30,9 @@ object Main {
 
     val itemIds = Source.fromFile(inFile).getLines().map(_.split(',')).flatten.map(_.toInt).toSeq
 
+
     val fs = for (id <- itemIds) yield {
-      val f = api.fetchItem(id)
+      val f = (api ? FetchItem(id)).mapTo[JsObject]
       for (
         obj <- f;
         item <- buildItem(obj)
@@ -120,7 +124,7 @@ object Main {
   }
 
   def buildSpellEffects(spellId: Int): Future[Seq[SpellEffect]] = {
-    api.fetchSpell(spellId).map { spellObj =>
+    (api ? FetchSpell(spellId)).mapTo[JsObject].map { spellObj =>
       val desc = spellObj.fields("AuraDescriptionParsed").convertTo[String]
 //      println(desc)
       val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
