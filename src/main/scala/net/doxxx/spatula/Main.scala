@@ -43,7 +43,7 @@ object Main {
         val healthItems = for (item <- items) yield categorizeHealthItem(item)
         val manaItems = for (item <- items) yield categorizeManaItem(item)
 
-        val categorizedItems = healthItems ++ manaItems
+        val categorizedItems = (healthItems ++ manaItems).flatten
 
         val lua = buildLua(categorizedItems)
         val w = new BufferedWriter(new FileWriter(outFile))
@@ -61,9 +61,8 @@ object Main {
     system.shutdown()
   }
 
-  def buildLua(items: Seq[Option[CategorizedItem]]): Seq[String] = {
-    val filtered = items.filter(_.isDefined).map(_.get)
-    val grouped = filtered.groupBy(_.category)
+  def buildLua(items: Seq[CategorizedItem]): Seq[String] = {
+    val grouped = items.groupBy(_.category)
     val mapped = grouped.mapValues(_.toSet)
 
     val lua = mapped.map {
