@@ -1,12 +1,12 @@
 package net.doxxx.spatula
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.ActorSystem
+import spray.json.{JsObject, DefaultJsonProtocol}
+import java.io.{BufferedWriter, FileWriter, File}
 import scala.util.{Failure, Success}
 import scala.concurrent._
 import scala.concurrent.duration._
-import spray.json.{JsObject, DefaultJsonProtocol}
-import java.io.{BufferedWriter, FileWriter, File}
+import ExecutionContext.Implicits.global
 import scala.io.Source
 
 object Main {
@@ -25,8 +25,6 @@ object Main {
     val inFile = new File(args(0))
     val outFile = new File(args(1))
 
-//    val itemIdsString = "58257,58259,58261,58263,58265,62679,65499,68140,70924,70925,70926,70927,74636,74641,74642,74643,74644,74645,74646,74647,74648,74649,74650,74651,74652,74653,74654,74655,74656,74919,74921,75016,75026,75037,75038,79320,80313,80610,80618,81175,81400,81401,81402,81403,81404,81405,81406,81407,81408,81409,81410,81411,81412,81413,81414,81415,81916,81918,81920,81921,81923,81924,82344,82449,82450,82451,83094,85501,85504,86026,86057,86069,86070,86073,86074,86432,86508,87226,87228,87230,87232,87234,87236,87238,87240,87242,87244,87246,87248,87253,87264,88379,88382,88530,88531,88578,88586,89683,90135,90735,94535"
-//    val itemIds = itemIdsString.split(",").toSeq.map(_.toInt)
     val itemIds = Source.fromFile(inFile).getLines().map(_.split(',')).flatten.map(_.toInt).toSeq
 
     val fs = for (id <- itemIds) yield {
