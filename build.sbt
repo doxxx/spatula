@@ -15,6 +15,8 @@ libraryDependencies ++= Seq(
     "ch.qos.logback" % "logback-classic" % "1.0.10",
     "org.clapper" % "grizzled-slf4j_2.10" % "1.0.1",
     "com.typesafe.akka" %% "akka-actor" % "2.1.2",
+    "com.typesafe.akka" %% "akka-contrib" % "2.1.2",
+    "com.typesafe.akka" %% "akka-slf4j" % "2.1.2",
     "io.spray" % "spray-client" % "1.1-M7",
     "io.spray" % "spray-caching" % "1.1-M7",
     "io.spray" %% "spray-json" % "1.2.3"

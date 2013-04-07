@@ -1,6 +1,8 @@
 package net.doxxx.spatula
 
 import akka.actor._
+import akka.contrib.throttle.TimerBasedThrottler
+import akka.contrib.throttle.Throttler.SetTarget
 import akka.pattern._
 import spray.can.client.HttpClient
 import spray.client.HttpConduit
@@ -11,7 +13,7 @@ import spray.caching._
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 
-class WowDbApi extends Actor {
+class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   private val ioBridge = IOExtension(context.system).ioBridge()
   private val httpClient = context.system.actorOf(Props(new HttpClient(ioBridge)))
 
@@ -20,12 +22,16 @@ class WowDbApi extends Actor {
     name = "http-conduit"
   )
 
+  log.info("Request rate: {}", settings.requestRate)
+  private val throttler = context.system.actorOf(Props(new TimerBasedThrottler(settings.requestRate)), "http-conduit-throttler")
+  throttler ! SetTarget(Some(conduit))
+
   private val itemCache: Cache[JsObject] = LruCache(maxCapacity = 1000)
   private val spellCache: Cache[JsObject] = LruCache(maxCapacity = 1000)
 
   import HttpConduit._
 
-  private val pipeline: HttpRequest => Future[HttpResponse] = sendReceive(conduit)
+  private val pipeline: HttpRequest => Future[HttpResponse] = sendReceive(throttler)
 
   private def toJson(r: HttpResponse): JsValue = {
     val text = r.entity.asString
@@ -36,12 +42,14 @@ class WowDbApi extends Actor {
 
   private def fetchItem(id: Int): Future[JsObject] = {
     itemCache.fromFuture(id) {
+      log.debug("Fetching item {}", id)
       pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson).map(_.asJsObject)
     }
   }
 
   private def fetchSpell(id: Int): Future[JsObject] = {
     spellCache.fromFuture(id) {
+      log.debug("Fetching spell {}", id)
       pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson).map(_.asJsObject)
     }
   }

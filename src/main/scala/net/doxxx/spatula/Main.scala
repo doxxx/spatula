@@ -1,7 +1,12 @@
 package net.doxxx.spatula
 
 import akka.actor._
+import akka.contrib.throttle.Throttler._
+import akka.contrib.throttle.TimerBasedThrottler
 import akka.pattern._
+import akka.util.Timeout
+import akka.event.Logging
+import com.typesafe.config.ConfigFactory
 import spray.json.{JsObject, DefaultJsonProtocol}
 import java.io.{BufferedWriter, FileWriter, File}
 import scala.util.{Failure, Success}
@@ -9,15 +14,19 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
 import scala.io.Source
-import akka.util.Timeout
 
 object Main {
   import DefaultJsonProtocol._
   import WowDbApi._
 
-  implicit val system = ActorSystem()
-  implicit val timeout = Timeout(1.minute)
-  val api = system.actorOf(Props[WowDbApi], "wowdb-api")
+  val config = ConfigFactory.load()
+  implicit val system = ActorSystem("spatula", config)
+  val log = Logging(system, "spatula")
+
+  val settings = new Settings(config)
+  implicit val timeout = Timeout(5.minutes)
+
+  val api = system.actorOf(Props(new WowDbApi(settings)), "wowdb-api")
 
   def main(args: Array[String]) {
     if (args.length != 2) {
@@ -33,10 +42,16 @@ object Main {
 
     val fs = for (id <- itemIds) yield {
       val f = (api ? FetchItem(id)).mapTo[JsObject]
-      for (
+      val f2 = for (
         obj <- f;
         item <- buildItem(obj)
       ) yield item
+
+      f2.onSuccess {
+        case i: Item => log.info("Fetched item: {} -> {}", i.id, i.name)
+      }
+
+      f2
     }
 
     val f = Future.sequence(fs)
