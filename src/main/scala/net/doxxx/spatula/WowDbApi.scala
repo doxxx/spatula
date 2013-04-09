@@ -14,6 +14,9 @@ import scala.concurrent._
 import ExecutionContext.Implicits.global
 
 class WowDbApi(settings: Settings) extends Actor with ActorLogging {
+  import DefaultJsonProtocol._
+  import WowDbApi._
+
   private val ioBridge = IOExtension(context.system).ioBridge()
   private val httpClient = context.system.actorOf(Props(new HttpClient(ioBridge)))
 
@@ -26,8 +29,8 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   private val throttler = context.system.actorOf(Props(new TimerBasedThrottler(settings.requestRate)), "http-conduit-throttler")
   throttler ! SetTarget(Some(conduit))
 
-  private val itemCache: Cache[JsObject] = LruCache(maxCapacity = 1000)
-  private val spellCache: Cache[JsObject] = LruCache(maxCapacity = 1000)
+  private val itemCache: Cache[Item] = LruCache(maxCapacity = 1000)
+  private val spellCache: Cache[Spell] = LruCache(maxCapacity = 1000)
 
   import HttpConduit._
 
@@ -41,21 +44,14 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   }
 
   private def fetchItem(id: Int): Future[JsObject] = {
-    itemCache.fromFuture(id) {
-      log.debug("Fetching item {}", id)
-      pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson)
-    }
+    log.debug("Fetching item {}", id)
+    pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson)
   }
 
   private def fetchSpell(id: Int): Future[JsObject] = {
-    spellCache.fromFuture(id) {
-      log.debug("Fetching spell {}", id)
-      pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson)
-    }
+    log.debug("Fetching spell {}", id)
+    pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson)
   }
-
-  import DefaultJsonProtocol._
-  import WowDbApi._
 
   val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and ([0-9,\\.]+) mana)?".r
   val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
@@ -70,22 +66,24 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     commaRE.replaceAllIn(s, "").toDouble.toInt
   }
 
-  def buildSpellEffects(spellId: Int): Future[Seq[SpellEffect]] = {
-    fetchSpell(spellId).map { spellObj =>
-      val desc = spellObj.fields("AuraDescriptionParsed").convertTo[String]
-      val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
-        case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
-        case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
-        case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
-        case None => Seq.empty
+  def buildSpell(id: Int): Future[Spell] = {
+    spellCache.fromFuture(id) {
+      fetchSpell(id).map { spellObj =>
+        val desc = spellObj.fields("AuraDescriptionParsed").convertTo[String]
+        val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
+          case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
+          case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
+          case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
+          case None => Seq.empty
+        }
+        val buff: Seq[SpellEffect] = buffRE.findFirstIn(desc) match {
+          case Some(buffDesc) => Seq(Buff(buffDesc))
+          case None => Seq.empty
+        }
+        val effects = restore ++ buff
+        log.debug("spell effect {}: '{}' => {}", id, desc, effects.toString)
+        Spell(id, effects)
       }
-      val buff: Seq[SpellEffect] = buffRE.findFirstIn(desc) match {
-        case Some(buffDesc) => Seq(Buff(buffDesc))
-        case None => Seq.empty
-      }
-      val effects = restore ++ buff
-      log.debug("spell effect {}: '{}' => {}", spellId, desc, effects.toString)
-      effects
     }
   }
 
@@ -94,18 +92,21 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     val name = itemObj.fields("Name").convertTo[String]
     val flags1 = itemObj.fields("Flags1").convertTo[Int]
     val conjured = (flags1 & 0x2) == 0x2
-    val spells = itemObj.fields("Spells").convertTo[Seq[Map[String,Int]]]
-    val spellEffects = spells.map { spellObj =>
+    val spellObjs = itemObj.fields("Spells").convertTo[Seq[Map[String,Int]]]
+    val spells = spellObjs.map { spellObj =>
       val spellId = spellObj("SpellID")
-      buildSpellEffects(spellId)
+      buildSpell(spellId)
     }
-    Future.sequence(spellEffects).map { effects =>
-      Item(id, name, conjured, effects.flatten)
+    Future.sequence(spells).map { spells =>
+      Item(id, name, conjured, spells.map(_.effects).flatten)
     }
   }
 
   def receive = {
-    case FetchItem(id) => fetchItem(id).flatMap(buildItem) pipeTo sender
+    case FetchItem(id) => itemCache.fromFuture(id) {
+      fetchItem(id).flatMap(buildItem) pipeTo sender
+    }
+
   }
 }
 
@@ -118,5 +119,6 @@ object WowDbApi {
   case class Mana(amount: Int) extends Refreshment
   case class HealthAndMana(health: Int, mana: Int) extends Refreshment
   case class Buff(desc: String) extends SpellEffect
+  case class Spell(id: Int, effects: Seq[SpellEffect])
   case class Item(id: Int, name: String, conjured: Boolean, effects: Seq[SpellEffect])
 }
