@@ -57,16 +57,17 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   import DefaultJsonProtocol._
   import WowDbApi._
 
-  val restoresRE = "Restores ([0-9,]+) (health|mana)( and ([0-9,]+) mana)?".r
-  val comboRE = "Restores ([0-9,]+) health and ([0-9,]+) mana".r
-  val healthRE = "Restores ([0-9,]+) health".r
-  val manaRE = "Restores ([0-9,]+) mana".r
+  val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and ([0-9,\\.]+) mana)?".r
+  val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
+  val healthRE = "Restores ([0-9,\\.]+) health".r
+  val manaRE = "Restores ([0-9,\\.]+) mana".r
   val commaRE = ",".r
 
   val buffRE = "If you spend at least ([0-9]+) seconds eating you will become well fed and gain ([0-9]+) ([^ ]+) for ([0-9]+) (.+).".r
 
   def parseNumber(s: String): Int = {
-    commaRE.replaceAllIn(s, "").toInt
+    // some numbers have decimals so toDouble to parse and then toInt to round down
+    commaRE.replaceAllIn(s, "").toDouble.toInt
   }
 
   def buildSpellEffects(spellId: Int): Future[Seq[SpellEffect]] = {
@@ -82,7 +83,9 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
         case Some(buffDesc) => Seq(Buff(buffDesc))
         case None => Seq.empty
       }
-      restore ++ buff
+      val effects = restore ++ buff
+      log.debug("spell effect {}: '{}' => {}", spellId, desc, effects.toString)
+      effects
     }
   }
 
