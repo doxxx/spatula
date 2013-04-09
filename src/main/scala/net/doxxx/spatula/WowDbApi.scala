@@ -81,7 +81,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
           case None => Seq.empty
         }
         val effects = restore ++ buff
-        log.debug("spell effect {}: '{}' => {}", id, desc, effects.toString)
+        log.debug("Fetched spell {}: '{}' => {}", id, desc, effects)
         Spell(id, effects)
       }
     }
@@ -93,10 +93,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     val flags1 = itemObj.fields("Flags1").convertTo[Int]
     val conjured = (flags1 & 0x2) == 0x2
     val spellObjs = itemObj.fields("Spells").convertTo[Seq[Map[String,Int]]]
-    val spells = spellObjs.map { spellObj =>
-      val spellId = spellObj("SpellID")
-      buildSpell(spellId)
-    }
+    val spells = spellObjs.map(obj => buildSpell(obj("SpellID")))
     Future.sequence(spells).map { spells =>
       Item(id, name, conjured, spells.map(_.effects).flatten)
     }
