@@ -60,7 +60,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   val manaRE = "Restores ([0-9,\\.]+) mana".r
   val commaRE = ",".r
 
-  val buffRE = "If you spend at least ([0-9]+) seconds eating you will become well fed and gain ([0-9]+) ([^ ]+) for ([0-9]+) (.+).".r
+  val buffRE = "If you spend at least ([0-9]+) seconds eating you will become well fed and gain (.+) for ([0-9]+) (.+).".r
 
   def parseNumber(s: String): Int = {
     // some numbers have decimals so toDouble to parse and then toInt to round down
