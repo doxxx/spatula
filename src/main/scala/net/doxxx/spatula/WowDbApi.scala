@@ -53,6 +53,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson)
   }
 
+  val feastRE = "Set out a ([^ ]+) feast".r
   val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and ([0-9,\\.]+) mana)?".r
   val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
   val healthRE = "Restores ([0-9,\\.]+) health".r
@@ -70,17 +71,25 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     spellCache.fromFuture(id) {
       fetchSpell(id).map { spellObj =>
         val desc = spellObj.fields("AuraDescriptionParsed").convertTo[String]
-        val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
-          case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
-          case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
-          case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
-          case None => Seq.empty
+        val effects: Seq[SpellEffect] = {
+          if (!feastRE.findFirstIn(desc).isDefined) {
+            // ignore feasts
+            Seq.empty
+          }
+          else {
+            val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
+              case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
+              case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
+              case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
+              case None => Seq.empty
+            }
+            val buff: Seq[SpellEffect] = buffRE.findFirstIn(desc) match {
+              case Some(buffDesc) => Seq(Buff(buffDesc))
+              case None => Seq.empty
+            }
+            restore ++ buff
+          }
         }
-        val buff: Seq[SpellEffect] = buffRE.findFirstIn(desc) match {
-          case Some(buffDesc) => Seq(Buff(buffDesc))
-          case None => Seq.empty
-        }
-        val effects = restore ++ buff
         log.debug("Fetched spell {}: '{}' => {}", id, desc, effects)
         Spell(id, effects)
       }
