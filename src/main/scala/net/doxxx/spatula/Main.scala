@@ -45,25 +45,30 @@ object Main {
       f
     }
 
-    val f = Future.sequence(fs)
+    val f = Future.sequence(fs).map { items =>
+      val healthItems = for (item <- items) yield categorizeHealthItem(item)
+      val manaItems = for (item <- items) yield categorizeManaItem(item)
 
-    f.onComplete {
-      case Success(items) => {
+      val categorizedItems = (healthItems ++ manaItems).flatten
 
-        val healthItems = for (item <- items) yield categorizeHealthItem(item)
-        val manaItems = for (item <- items) yield categorizeManaItem(item)
+      buildLua(categorizedItems)
+    }.andThen {
+      case Success(lua) => {
+        try {
+          log.info("Writing LUA to {}", outFile)
 
-        val categorizedItems = (healthItems ++ manaItems).flatten
-
-        val lua = buildLua(categorizedItems)
-        val w = new BufferedWriter(new FileWriter(outFile))
-        lua.foreach { line =>
-          w.write(line)
-          w.write('\n')
+          val w = new BufferedWriter(new FileWriter(outFile))
+          lua.foreach { line =>
+            w.write(line)
+            w.write('\n')
+          }
+          w.close()
         }
-        w.close()
+        catch {
+          case t: Throwable => log.error(t, "Could not write output file {}", outFile)
+        }
       }
-      case Failure(t) => t.printStackTrace()
+      case Failure(t) => log.error(t, "Error")
     }
 
     Await.ready(f, Duration.Inf)
