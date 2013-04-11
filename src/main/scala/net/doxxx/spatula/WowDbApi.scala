@@ -54,8 +54,9 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   }
 
   val feastRE = "Set out a .+? to feed".r
-  val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and ([0-9,\\.]+) mana)?".r
+  val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and (([0-9,\\.]+) )?mana)?".r
   val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
+  val combo2RE = "Restores ([0-9,\\.]+) health and mana".r
   val healthRE = "Restores ([0-9,\\.]+) health".r
   val manaRE = "Restores ([0-9,\\.]+) mana".r
   val commaRE = ",".r
@@ -79,6 +80,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
           else {
             val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
               case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
+              case Some(combo2RE(amount)) => Seq(HealthAndMana(parseNumber(amount), parseNumber(amount)))
               case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
               case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
               case None => Seq.empty
