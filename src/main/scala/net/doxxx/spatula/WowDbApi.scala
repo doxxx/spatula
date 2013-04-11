@@ -12,6 +12,7 @@ import spray.json._
 import spray.caching._
 import scala.concurrent._
 import ExecutionContext.Implicits.global
+import scalax.file.Path
 
 class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   import DefaultJsonProtocol._
@@ -29,6 +30,8 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
   private val throttler = context.system.actorOf(Props(new TimerBasedThrottler(settings.requestRate)), "http-conduit-throttler")
   throttler ! SetTarget(Some(conduit))
 
+  private val itemDiskCache = new DiskCache(Path("cache") / "item")
+  private val spellDiskCache = new DiskCache(Path("cache") / "spell")
   private val itemCache: Cache[Item] = LruCache(maxCapacity = 1000)
   private val spellCache: Cache[Spell] = LruCache(maxCapacity = 1000)
 
@@ -36,21 +39,24 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
 
   private val pipeline: HttpRequest => Future[HttpResponse] = sendReceive(throttler)
 
-  private def toJson(r: HttpResponse): JsObject = {
-    val text = r.entity.asString
+  private def toJson(s: String): JsObject = {
     // wowdb.com returns JSON surrounded with parentheses, which must be stripped
-    val trimmed = text.substring(1, text.length - 1)
+    val trimmed = s.substring(1, s.length - 1)
     JsonParser(trimmed).asJsObject
   }
 
   private def fetchItemJson(id: Int): Future[JsObject] = {
     log.debug("Fetching item {}", id)
-    pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson)
+    itemDiskCache.fromFuture(id) {
+      pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(r => r.entity.asString)
+    }.map(toJson)
   }
 
   private def fetchSpellJson(id: Int): Future[JsObject] = {
     log.debug("Fetching spell {}", id)
-    pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson)
+    spellDiskCache.fromFuture(id) {
+      pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(r => r.entity.asString)
+    }.map(toJson)
   }
 
   private val feastRE = "Set out a .+? to feed".r

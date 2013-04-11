@@ -19,5 +19,7 @@ libraryDependencies ++= Seq(
     "com.typesafe.akka" %% "akka-slf4j" % "2.1.2",
     "io.spray" % "spray-client" % "1.1-M7",
     "io.spray" % "spray-caching" % "1.1-M7",
-    "io.spray" %% "spray-json" % "1.2.3"
+    "io.spray" %% "spray-json" % "1.2.3",
+    "com.github.scala-incubator.io" %% "scala-io-core" % "0.4.2",
+    "com.github.scala-incubator.io" %% "scala-io-file" % "0.4.2"
 )
