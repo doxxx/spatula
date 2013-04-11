@@ -36,7 +36,7 @@ object Main {
     val itemIds = Source.fromFile(inFile).getLines().map(_.split(',')).flatten.map(_.toInt).toSeq
 
     val fs = for (id <- itemIds) yield {
-      val f = (api ? FetchItem(id)).mapTo[Item]
+      val f = (api ? GetItem(id)).mapTo[Item]
 
       f.onSuccess {
         case i: Item => log.info("Fetched item: {} -> {}", i.id, i.name)

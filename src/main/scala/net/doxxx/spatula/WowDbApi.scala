@@ -43,81 +43,87 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     JsonParser(trimmed).asJsObject
   }
 
-  private def fetchItem(id: Int): Future[JsObject] = {
+  private def fetchItemJson(id: Int): Future[JsObject] = {
     log.debug("Fetching item {}", id)
     pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(toJson)
   }
 
-  private def fetchSpell(id: Int): Future[JsObject] = {
+  private def fetchSpellJson(id: Int): Future[JsObject] = {
     log.debug("Fetching spell {}", id)
     pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson)
   }
 
-  val feastRE = "Set out a .+? to feed".r
-  val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and (([0-9,\\.]+) )?mana)?".r
-  val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
-  val combo2RE = "Restores ([0-9,\\.]+) health and mana".r
-  val healthRE = "Restores ([0-9,\\.]+) health".r
-  val manaRE = "Restores ([0-9,\\.]+) mana".r
-  val commaRE = ",".r
+  private val feastRE = "Set out a .+? to feed".r
+  private val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and (([0-9,\\.]+) )?mana)?".r
+  private val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
+  private val combo2RE = "Restores ([0-9,\\.]+) health and mana".r
+  private val healthRE = "Restores ([0-9,\\.]+) health".r
+  private val manaRE = "Restores ([0-9,\\.]+) mana".r
+  private val commaRE = ",".r
 
-  val buffRE = "If you spend at least [0-9]+ seconds eating you will become well fed.+".r
+  private val buffRE = "If you spend at least [0-9]+ seconds eating you will become well fed.+".r
 
-  def parseNumber(s: String): Int = {
+  private def parseNumber(s: String): Int = {
     // some numbers have decimals so toDouble to parse and then toInt to round down
     commaRE.replaceAllIn(s, "").toDouble.toInt
   }
 
-  def buildSpell(id: Int): Future[Spell] = {
-    spellCache.fromFuture(id) {
-      fetchSpell(id).map { spellObj =>
-        val desc = spellObj.fields("AuraDescriptionParsed").convertTo[String]
-        val effects: Seq[SpellEffect] = {
-          if (feastRE.findFirstIn(desc).isDefined) {
-            // ignore feasts
-            Seq.empty
-          }
-          else {
-            val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
-              case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
-              case Some(combo2RE(amount)) => Seq(HealthAndMana(parseNumber(amount), parseNumber(amount)))
-              case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
-              case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
-              case None => Seq.empty
-            }
-            val buff: Seq[SpellEffect] = buffRE.findFirstIn(desc) match {
-              case Some(buffDesc) => Seq(Buff(buffDesc))
-              case None => Seq.empty
-            }
-            restore ++ buff
-          }
-        }
-        log.debug("Fetched spell {}: '{}' => {}", id, desc, effects)
-        Spell(id, effects)
+  private def buildSpell(spellJson: JsObject): Future[Spell] = future {
+    val id = spellJson.fields("ID").convertTo[Int]
+    val desc = spellJson.fields("AuraDescriptionParsed").convertTo[String]
+    val effects: Seq[SpellEffect] = {
+      if (feastRE.findFirstIn(desc).isDefined) {
+        // ignore feasts
+        Seq.empty
       }
+      else {
+        val restore: Seq[SpellEffect] = restoresRE.findFirstIn(desc) match {
+          case Some(comboRE(health, mana)) => Seq(HealthAndMana(parseNumber(health), parseNumber(mana)))
+          case Some(combo2RE(amount)) => Seq(HealthAndMana(parseNumber(amount), parseNumber(amount)))
+          case Some(healthRE(health)) => Seq(Health(parseNumber(health)))
+          case Some(manaRE(mana)) => Seq(Mana(parseNumber(mana)))
+          case None => Seq.empty
+        }
+        val buff: Seq[SpellEffect] = buffRE.findFirstIn(desc) match {
+          case Some(buffDesc) => Seq(Buff(buffDesc))
+          case None => Seq.empty
+        }
+        restore ++ buff
+      }
+    }
+    log.debug("Fetched spell {}: '{}' => {}", id, desc, effects)
+    Spell(id, effects)
+  }
+
+  private def getSpell(id: Int): Future[Spell] = {
+    spellCache.fromFuture(id) {
+      for (spellJson <- fetchSpellJson(id); spell <- buildSpell(spellJson)) yield spell
     }
   }
 
-  def buildItem(itemObj: JsObject): Future[Item] = {
-    val id = itemObj.fields("ID").convertTo[Int]
-    val name = itemObj.fields("Name").convertTo[String]
-    val flags1 = itemObj.fields("Flags1").convertTo[Int]
+  private def buildItem(itemJson: JsObject): Future[Item] = {
+    val id = itemJson.fields("ID").convertTo[Int]
+    val name = itemJson.fields("Name").convertTo[String]
+    val flags1 = itemJson.fields("Flags1").convertTo[Int]
     val conjured = (flags1 & 0x2) == 0x2
-    val spellObjs = itemObj.fields("Spells").convertTo[Seq[Map[String,Int]]]
-    val spells = spellObjs.map(obj => buildSpell(obj("SpellID")))
-    Future.sequence(spells).map { spells =>
+    val spellInfos = itemJson.fields("Spells").convertTo[Seq[Map[String, Int]]]
+    val spells = Future.sequence(spellInfos.map(info => getSpell(info("SpellID"))))
+    spells.map { spells =>
       Item(id, name, conjured, spells.map(_.effects).flatten)
     }
   }
 
-  def receive = {
-    case FetchItem(id) => itemCache.fromFuture(id) {
-      fetchItem(id).flatMap(buildItem) pipeTo sender
+  private def getItem(id: Int): Future[Item] = {
+    itemCache.fromFuture(id) {
+      for (itemJson <- fetchItemJson(id); item <- buildItem(itemJson)) yield item
     }
+  }
 
+  def receive = {
+    case GetItem(id) => getItem(id) pipeTo sender
   }
 }
 
 object WowDbApi {
-  case class FetchItem(id: Int)
+  case class GetItem(id: Int)
 }
