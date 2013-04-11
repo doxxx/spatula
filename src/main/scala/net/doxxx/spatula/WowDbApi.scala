@@ -53,7 +53,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     pipeline(Get("/api/spell/%d?cookieTest=1".format(id))).map(toJson)
   }
 
-  val feastRE = "Set out a (.+?) feast".r
+  val feastRE = "Set out a .+? to feed".r
   val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and ([0-9,\\.]+) mana)?".r
   val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
   val healthRE = "Restores ([0-9,\\.]+) health".r
