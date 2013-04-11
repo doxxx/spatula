@@ -5,12 +5,11 @@ import akka.pattern._
 import akka.util.Timeout
 import akka.event.Logging
 import com.typesafe.config.ConfigFactory
-import java.io.{BufferedWriter, FileWriter, File}
 import scala.util.{Failure, Success}
 import scala.concurrent._
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
-import scala.io.Source
+import scalax.file.Path
 
 object Main {
   import WowDbApi._
@@ -30,10 +29,11 @@ object Main {
       sys.exit(-1)
     }
 
-    val inFile = new File(args(0))
-    val outFile = new File(args(1))
+    val inFile = Path(args(0))
+    val outFile = Path(args(1))
 
-    val itemIds = Source.fromFile(inFile).getLines().map(_.split(',')).flatten.map(_.toInt).toSeq
+    log.info("Reading item IDs from {}", inFile.path)
+    val itemIds = inFile.lines().map(_.split(',')).flatten.map(_.toInt).toSeq
 
     val fs = for (id <- itemIds) yield {
       val f = (api ? GetItem(id)).mapTo[Item]
@@ -55,14 +55,8 @@ object Main {
     }.andThen {
       case Success(lua) => {
         try {
-          log.info("Writing LUA to {}", outFile)
-
-          val w = new BufferedWriter(new FileWriter(outFile))
-          lua.foreach { line =>
-            w.write(line)
-            w.write('\n')
-          }
-          w.close()
+          log.info("Writing LUA to {}", outFile.path)
+          outFile.writeStrings(lua, sys.props("line.separator"))
         }
         catch {
           case t: Throwable => log.error(t, "Could not write output file {}", outFile)
