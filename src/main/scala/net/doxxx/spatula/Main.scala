@@ -36,16 +36,21 @@ object Main {
     val itemIds = inFile.lines().map(_.split(',')).flatten.map(_.toInt).toSet
 
     val fs = for (id <- itemIds) yield {
-      val f = (api ? GetItem(id)).mapTo[Item]
+      val f = (api ? GetItem(id)).mapTo[Item].map(Some(_)).recover({
+        case _ => {
+          log.error("Failed to get item #{}", id)
+          None
+        }
+      })
 
       f.onSuccess {
-        case i: Item => log.info("Fetched item: {} -> {}", i.id, i.name)
+        case Some(i: Item) => log.info("Fetched item: {} -> {}", i.id, i.name)
       }
 
       f
     }
 
-    val f = Future.sequence(fs).map { items =>
+    val f = Future.sequence(fs).map(_.flatten).map { items =>
       val healthItems = for (item <- items) yield categorizeHealthItem(item)
       val manaItems = for (item <- items) yield categorizeManaItem(item)
 
