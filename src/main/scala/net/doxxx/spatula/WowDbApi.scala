@@ -49,7 +49,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     log.debug("Fetching item {}", id)
     itemDiskCache.fromFuture(id) {
       pipeline(Get("/api/item/%d?cookieTest=1".format(id))).map(r => r.entity.asString)
-    }.map(toJson)
+    }.map(toJson).filter(!_.fields.contains("Error"))
   }
 
   private def fetchSpellJson(id: Int): Future[JsObject] = {
