@@ -33,7 +33,7 @@ object Main {
     val outFile = Path(args(1))
 
     log.info("Reading item IDs from {}", inFile.path)
-    val itemIds = inFile.lines().map(_.split(',')).flatten.map(_.toInt).toSeq
+    val itemIds = inFile.lines().map(_.split(',')).flatten.map(_.toInt).toSet
 
     val fs = for (id <- itemIds) yield {
       val f = (api ? GetItem(id)).mapTo[Item]
@@ -70,7 +70,7 @@ object Main {
     system.shutdown()
   }
 
-  def buildLua(items: Seq[CategorizedItem]): Seq[String] = {
+  def buildLua(items: Iterable[CategorizedItem]): Seq[String] = {
     val grouped = items.groupBy(_.category)
     val mapped = grouped.mapValues(_.toSet)
 
