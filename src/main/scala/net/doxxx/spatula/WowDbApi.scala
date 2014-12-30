@@ -112,8 +112,11 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     val name = itemJson.fields("Name").convertTo[String]
     val flags1 = itemJson.fields("Flags1").convertTo[Int]
     val conjured = (flags1 & 0x2) == 0x2
-    val spellInfos = itemJson.fields("Spells").convertTo[Seq[Map[String, Int]]]
-    val spells = Future.sequence(spellInfos.map(info => getSpell(info("SpellID"))))
+    val spellInfos = itemJson.fields("Spells").convertTo[Seq[Map[String, JsValue]]]
+    val spells = Future.sequence(spellInfos.map(info => info("SpellID") match {
+      case id:JsNumber => Some(getSpell(id.value.toInt))
+      case _ => None
+    }).flatten)
     spells.map { spells =>
       Item(id, name, conjured, spells.map(_.effects).flatten)
     }
