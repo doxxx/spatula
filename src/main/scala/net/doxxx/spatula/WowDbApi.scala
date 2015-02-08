@@ -59,7 +59,7 @@ class WowDbApi(settings: Settings) extends Actor with ActorLogging {
     }.map(toJson)
   }
 
-  private val feastRE = "Set out a .+? to feed".r
+  private val feastRE = "Set out a .+? to feed|Feed up to [0-9]+ people".r
   private val restoresRE = "Restores ([0-9,\\.]+) (health|mana)( and (([0-9,\\.]+) )?mana)?".r
   private val comboRE = "Restores ([0-9,\\.]+) health and ([0-9,\\.]+) mana".r
   private val combo2RE = "Restores ([0-9,\\.]+) health and mana".r
